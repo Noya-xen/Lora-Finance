@@ -1,0 +1,2 @@
+# Private keys, one per line (with or without 0x prefix)
+# Lines starting with # are ignored

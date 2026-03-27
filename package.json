@@ -1,0 +1,16 @@
+{
+  "name": "lora-finance-bot",
+  "version": "1.0.0",
+  "description": "Lora Finance Testnet Airdrop Bot - Faucet + Rent Automation",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "lobby": "node lobby.js"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.4"
+  }
+}

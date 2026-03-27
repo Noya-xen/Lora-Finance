@@ -12,6 +12,7 @@ import {
 } from './config.js';
 import {
   log, sleep, randomDelay, shortAddr,
+  fetchWithProxy, getProxyForIndex, getProxiesCount
 } from './utils.js';
 
 // ============================================================
@@ -65,13 +66,13 @@ function loadWallets() {
 // Authentication (works for both whitelisted & non-whitelisted)
 // ============================================================
 
-async function authenticate(wallet, tag) {
+async function authenticate(wallet, tag, proxyUrl) {
   const address = wallet.address.toLowerCase();
 
   log.info(tag, 'Authenticating...');
   const signature = await wallet.signMessage(SIGN_MESSAGE);
 
-  const resp = await fetch(`${API_BASE}/api/checkpoint/verify`, {
+  const resp = await fetchWithProxy(`${API_BASE}/api/checkpoint/verify`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -79,7 +80,7 @@ async function authenticate(wallet, tag) {
       'Referer': `${API_BASE}/checkpoint`,
     },
     body: JSON.stringify({ address, signature, message: SIGN_MESSAGE }),
-  });
+  }, proxyUrl);
 
   const body = await resp.json().catch(() => ({}));
   const setCookies = resp.headers.getSetCookie?.() || [];
@@ -119,7 +120,7 @@ async function authenticate(wallet, tag) {
 // Complete Lobby Tasks
 // ============================================================
 
-async function completeLobbyTasks(wallet, authCookie, tag) {
+async function completeLobbyTasks(wallet, authCookie, tag, proxyUrl) {
   const address = wallet.address.toLowerCase();
 
   const headers = {
@@ -136,11 +137,11 @@ async function completeLobbyTasks(wallet, authCookie, tag) {
       log.info(tag, `  📋 ${task.name}: ${task.description}`);
 
       // Submit the task via POST
-      const resp = await fetch(`${API_BASE}/api/points/social/twitter/${task.id}`, {
+      const resp = await fetchWithProxy(`${API_BASE}/api/points/social/twitter/${task.id}`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ address }),
-      });
+      }, proxyUrl);
 
       const result = await resp.json().catch(() => ({}));
 
@@ -173,6 +174,8 @@ async function main() {
   log.banner('LORA FINANCE — LOBBY WAITLIST BOT');
   log.info('SETUP', 'This script completes Follow + Repost tasks for accounts NOT yet on the waitlist.');
   log.info('SETUP', 'Once on the waitlist, use index.js for daily tasks.');
+  const proxiesCount = getProxiesCount();
+  log.info('SETUP', `Loaded ${proxiesCount} proxy(s) from proxies.txt`);
   log.divider();
 
   const wallets = loadWallets();
@@ -183,7 +186,9 @@ async function main() {
 
   for (let i = 0; i < wallets.length; i++) {
     const wallet = wallets[i];
-    const tag = `Account ${i + 1}/${wallets.length}`;
+    const proxyUrl = getProxyForIndex(i);
+    const proxyDisplay = proxyUrl ? `[Proxy: ${proxyUrl.split('@').pop()}]` : '';
+    const tag = `Account ${i + 1}/${wallets.length} ${proxyDisplay}`.trim();
     const addr = shortAddr(wallet.address);
 
     log.divider();
@@ -191,7 +196,7 @@ async function main() {
 
     try {
       // Step 1: Authenticate
-      const { authCookie, isWhitelisted } = await authenticate(wallet, tag);
+      const { authCookie, isWhitelisted } = await authenticate(wallet, tag, proxyUrl);
 
       if (isWhitelisted) {
         whitelistedCount++;
@@ -200,7 +205,7 @@ async function main() {
       }
 
       // Step 2: Complete lobby tasks
-      const success = await completeLobbyTasks(wallet, authCookie, tag);
+      const success = await completeLobbyTasks(wallet, authCookie, tag, proxyUrl);
 
       if (success) {
         completedCount++;

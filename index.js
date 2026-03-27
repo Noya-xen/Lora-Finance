@@ -15,6 +15,7 @@ import {
 import {
   log, sleep, randomDelay, retry,
   shortAddr, formatEther, formatDuration,
+  fetchWithProxy, getProxyForIndex, getProxiesCount
 } from './utils.js';
 
 // ============================================================
@@ -67,7 +68,7 @@ function getWallets(provider) {
 
 const sessionCache = new Map(); // address → { cookie, expires }
 
-async function authenticate(wallet, tag) {
+async function authenticate(wallet, tag, proxyUrl) {
   const address = wallet.address.toLowerCase();
 
   // Check cache
@@ -83,7 +84,7 @@ async function authenticate(wallet, tag) {
   const signature = await wallet.signMessage(SIGN_MESSAGE);
 
   // POST to checkpoint verify endpoint
-  const resp = await fetch(`${API_BASE}/api/checkpoint/verify`, {
+  const resp = await fetchWithProxy(`${API_BASE}/api/checkpoint/verify`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -95,7 +96,7 @@ async function authenticate(wallet, tag) {
       signature,
       message: SIGN_MESSAGE,
     }),
-  });
+  }, proxyUrl);
 
   if (!resp.ok) {
     const errText = await resp.text().catch(() => '');
@@ -139,7 +140,7 @@ async function authenticate(wallet, tag) {
 // Social Tasks Module
 // ============================================================
 
-async function doSocialTasks(wallet, authCookie, tag) {
+async function doSocialTasks(wallet, authCookie, tag, proxyUrl) {
   const address = wallet.address.toLowerCase();
 
   log.info(tag, 'Starting social tasks...');
@@ -157,7 +158,7 @@ async function doSocialTasks(wallet, authCookie, tag) {
 
       // Step 1: Check if already completed via GET
       const checkUrl = `${API_BASE}/api/points/social/twitter/check/${task.id}`;
-      const checkResp = await fetch(checkUrl, { headers });
+      const checkResp = await fetchWithProxy(checkUrl, { headers }, proxyUrl);
 
       if (checkResp.ok) {
         const checkData = await checkResp.json().catch(() => null);
@@ -171,11 +172,11 @@ async function doSocialTasks(wallet, authCookie, tag) {
 
       // Step 2: Trigger verification via POST
       const verifyUrl = `${API_BASE}/api/points/social/twitter/${task.id}`;
-      const verifyResp = await fetch(verifyUrl, {
+      const verifyResp = await fetchWithProxy(verifyUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify({ address }),
-      });
+      }, proxyUrl);
 
       if (verifyResp.ok) {
         const result = await verifyResp.json().catch(() => ({}));
@@ -185,10 +186,10 @@ async function doSocialTasks(wallet, authCookie, tag) {
         log.warn(tag, `    ${task.name}: ${verifyResp.status} - ${errText.slice(0, 200)}`);
 
         // If POST fails, try the check endpoint as a verify trigger
-        const retryResp = await fetch(`${API_BASE}/api/points/social/twitter/check/${task.id}`, {
+        const retryResp = await fetchWithProxy(`${API_BASE}/api/points/social/twitter/check/${task.id}`, {
           method: 'GET',
           headers,
-        });
+        }, proxyUrl);
         if (retryResp.ok) {
           const retryData = await retryResp.json().catch(() => ({}));
           log.info(tag, `    Retry check: ${JSON.stringify(retryData)}`);
@@ -371,7 +372,9 @@ async function doRentUp(wallet, tag) {
 // ============================================================
 
 async function processWallet(wallet, index, total) {
-  const tag = `Wallet ${index + 1}/${total}`;
+  const proxyUrl = getProxyForIndex(index);
+  const proxyDisplay = proxyUrl ? `[Proxy: ${proxyUrl.split('@').pop()}]` : '';
+  const tag = `Wallet ${index + 1}/${total} ${proxyDisplay}`.trim();
   const addr = shortAddr(wallet.address);
 
   log.divider();
@@ -389,7 +392,7 @@ async function processWallet(wallet, index, total) {
   // ── Authenticate ──────────────────────────────────────────
   let authCookie;
   try {
-    authCookie = await authenticate(wallet, tag);
+    authCookie = await authenticate(wallet, tag, proxyUrl);
   } catch (err) {
     log.error(tag, `Auth failed: ${err?.message || err}`);
     log.warn(tag, 'Skipping social tasks, continuing with on-chain tasks...');
@@ -399,7 +402,7 @@ async function processWallet(wallet, index, total) {
   if (authCookie) {
     try {
       log.info(tag, '── Step 1: Social Tasks ──');
-      await doSocialTasks(wallet, authCookie, tag);
+      await doSocialTasks(wallet, authCookie, tag, proxyUrl);
     } catch (err) {
       log.error(tag, `Social task error: ${err?.message || err}`);
     }
@@ -456,6 +459,9 @@ async function main() {
   log.info('SETUP', `Faucet: ${CONTRACTS.FAUCET}`);
   log.info('SETUP', `Market: ${CONTRACTS.MARKET}`);
   log.info('SETUP', `WETHx: ${CONTRACTS.WETHX}`);
+  
+  const proxiesCount = getProxiesCount();
+  log.info('SETUP', `Loaded ${proxiesCount} proxy(s) from proxies.txt`);
 
   const provider = getProvider();
   const wallets = getWallets(provider);

@@ -76,3 +76,33 @@ export function formatDuration(ms) {
   const seconds = Math.floor((ms % 60000) / 1000);
   return `${hours}h ${minutes}m ${seconds}s`;
 }
+
+// ── Proxy Handling ───────────────────────────────────────────
+import { readFileSync } from 'fs';
+import nodeFetch from 'node-fetch';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { DEFAULTS } from './config.js';
+
+let proxies = [];
+try {
+  const content = readFileSync(DEFAULTS.PROXIES_FILE || 'proxies.txt', 'utf-8');
+  proxies = content.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+} catch (err) {
+  // proxies.txt not found or empty
+}
+
+export function getProxiesCount() {
+  return proxies.length;
+}
+
+export function getProxyForIndex(index) {
+  if (proxies.length === 0) return null;
+  return proxies[index % proxies.length];
+}
+
+export async function fetchWithProxy(url, options = {}, proxyUrl = null) {
+  if (proxyUrl) {
+    options.agent = new HttpsProxyAgent(proxyUrl);
+  }
+  return nodeFetch(url, options);
+}

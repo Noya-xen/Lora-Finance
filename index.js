@@ -117,8 +117,9 @@ async function authenticate(wallet, tag, proxyUrl) {
   if (!authCookie) {
     // Try to extract from response body if cookie is returned there
     const body = await resp.json().catch(() => ({}));
-    if (body.token) {
-      authCookie = `lora_testnet_wallet_auth=${body.token}`;
+    const token = body.token || body.jwt;
+    if (token) {
+      authCookie = `lora_testnet_wallet_auth=${token}`;
     }
   }
 
